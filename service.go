@@ -34,7 +34,8 @@ var sConfig = struct {
   To []string
   From string
   Message string
-}{}
+  test bool
+}{test : len(os.Args) > 1 && os.Args[1] == "test"}
 //var sResponseTpl = `{"error":%d, "message":"%s"}`
 
 func main() {
@@ -48,11 +49,11 @@ func main() {
   err = json.Unmarshal(aConfig, &sConfig)
   if err != nil { panic(err) }
 
-  if sConfig.Password != "password" {
-    for a := range sConfig.To {
-      sendMail(sConfig.To[a], "server started")
-    }
+  if ! sConfig.test {
+    sendMail("server started")
   }
+  _, err = fmt.Fprintf(sLog, "RESUME %s\n", time.Now().Format(time.RFC3339))
+  if err != nil { panic(err) }
 
   aPend, err := ioutil.ReadDir(sDirname+"/timer")
   if err != nil { panic(err) }
@@ -108,33 +109,33 @@ func timeUp(iClient string) {
   var err error
   _, err = fmt.Fprintf(sLog, "TIMEUP %s, %s %.1fm\n", iClient, time.Now().Format(time.RFC3339), (time.Duration(sConfig.Wait)*time.Second).Minutes())
   if err != nil { panic(err) }
-  for a := range sConfig.To {
-    sendMail(sConfig.To[a], iClient+" failed to complete an update")
-  }
+  sendMail(iClient+" failed to complete an update")
   err = WriteSync(sDirname+"/timer/"+iClient, []byte(" timeup"), os.O_APPEND|os.O_WRONLY, 0)
   if err != nil { panic(err) }
 }
 
-func sendMail(iTo, iMsg string) {
-  var err error
-  aMx, err := net.LookupMX(strings.Split(iTo, "@")[1])
-  if err != nil { panic(err) }
-  aConn, err := smtp.Dial(aMx[0].Host+":25")
-  if err != nil { panic(err) }
-  err = aConn.Hello(strings.Split(sConfig.From, "@")[1])
-  if err != nil { panic(err) }
-  err = aConn.Mail(sConfig.From)
-  if err != nil { panic(err) }
-  err = aConn.Rcpt(iTo)
-  if err != nil { panic(err) }
-  aW, err := aConn.Data()
-  if err != nil { panic(err) }
-  _, err = fmt.Fprintf(aW, sConfig.Message, iTo, sConfig.From, time.Now().Format(time.RFC822Z), iMsg)
-  if err != nil { panic(err) }
-  err = aW.Close()
-  if err != nil { panic(err) }
-  err = aConn.Quit()
-  if err != nil { panic(err) }
+func sendMail(iMsg string) {
+  for a := range sConfig.To {
+    var err error
+    aMx, err := net.LookupMX(strings.Split(sConfig.To[a], "@")[1])
+    if err != nil { panic(err) }
+    aConn, err := smtp.Dial(aMx[0].Host+":25")
+    if err != nil { panic(err) }
+    err = aConn.Hello(strings.Split(sConfig.From, "@")[1])
+    if err != nil { panic(err) }
+    err = aConn.Mail(sConfig.From)
+    if err != nil { panic(err) }
+    err = aConn.Rcpt(sConfig.To[a])
+    if err != nil { panic(err) }
+    aW, err := aConn.Data()
+    if err != nil { panic(err) }
+    _, err = fmt.Fprintf(aW, sConfig.Message, sConfig.To[a], sConfig.From, time.Now().Format(time.RFC822Z), iMsg)
+    if err != nil { panic(err) }
+    err = aW.Close()
+    if err != nil { panic(err) }
+    err = aConn.Quit()
+    if err != nil { panic(err) }
+  }
 }
 
 func reqClose(oResp http.ResponseWriter, iReq *http.Request) {
@@ -148,14 +149,17 @@ func reqClose(oResp http.ResponseWriter, iReq *http.Request) {
     fmt.Fprintf(oResp, "error\r\nalready closed\r\n")
     return
   }
-  sTimer[aClient].Stop()
+  if ! sTimer[aClient].Stop() && ! sConfig.test {
+    go sendMail(aClient+" failure has been resolved")
+  }
   sTimer[aClient] = nil
-  err := os.Remove(sDirname+"/timer/"+aClient) // os.Sync
-  if err != nil { panic(err) }
+  var err error
   aTicket := strings.Split(aV.Get("ticket"), "@")
   aStart, err := time.Parse(time.RFC3339, aTicket[1])
   if err != nil { panic(err) }
   _, err = fmt.Fprintf(sLog, "closed %s, %s %.1fm\n", aTicket[0], aTicket[1], time.Since(aStart).Minutes())
+  if err != nil { panic(err) }
+  err = os.Remove(sDirname+"/timer/"+aClient) // os.Sync
   if err != nil { panic(err) }
   fmt.Fprintf(oResp, "ok\r\n")
 }
