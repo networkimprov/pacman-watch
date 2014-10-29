@@ -34,6 +34,7 @@ var sConfig = struct {
   To []string
   From string
   Message string
+  tolist string
   test bool
 }{test : len(os.Args) > 1 && os.Args[1] == "test"}
 //var sResponseTpl = `{"error":%d, "message":"%s"}`
@@ -49,6 +50,10 @@ func main() {
   err = json.Unmarshal(aConfig, &sConfig)
   if err != nil { panic(err) }
 
+  for a := range sConfig.To {
+    sConfig.tolist += sConfig.To[a]
+    if a+1 < len(sConfig.To) { sConfig.tolist += ", " }
+  }
   if ! sConfig.test {
     sendMail("server started")
   }
@@ -129,7 +134,7 @@ func sendMail(iMsg string) {
     if err != nil { panic(err) }
     aW, err := aConn.Data()
     if err != nil { panic(err) }
-    _, err = fmt.Fprintf(aW, sConfig.Message, sConfig.To[a], sConfig.From, time.Now().Format(time.RFC822Z), iMsg)
+    _, err = fmt.Fprintf(aW, sConfig.Message, sConfig.tolist, sConfig.From, time.Now().Format(time.RFC822Z), iMsg)
     if err != nil { panic(err) }
     err = aW.Close()
     if err != nil { panic(err) }
