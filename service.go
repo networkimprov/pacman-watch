@@ -61,6 +61,9 @@ func main() {
     aClient := aPend[a].Name()
     aData, err := ioutil.ReadFile(sDirname+"/timer/"+aClient)
     if err != nil { panic(err) }
+    if len(aData) == 0 {
+      continue
+    }
     aTime := strings.Split(string(aData), " ")
     if len(aTime) > 1 && aTime[1] == "timeup" {
       sTimer[aClient] = new(time.Timer)
@@ -175,7 +178,7 @@ func reqClose(oResp http.ResponseWriter, iReq *http.Request) {
   if err != nil { panic(err) }
   _, err = fmt.Fprintf(sLog, "closed %s, %s %.1fm\n", aTicket[0], aTicket[1], time.Since(aStart).Minutes())
   if err != nil { panic(err) }
-  err = os.Remove(sDirname+"/timer/"+aClient) // os.Sync
+  err = WriteSync(sDirname+"/timer/"+aClient, []byte{}, os.O_TRUNC|os.O_WRONLY, 0)
   if err != nil { panic(err) }
   fmt.Fprintf(oResp, "ok\r\n")
 }
