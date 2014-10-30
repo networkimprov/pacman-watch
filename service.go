@@ -31,10 +31,7 @@ var sConfig = struct {
   Http string
   Password string
   Wait int
-  To []string
-  From string
-  Message string
-  tolist string
+  To, From, Message string
   test bool
 }{test : len(os.Args) > 1 && os.Args[1] == "test"}
 //var sResponseTpl = `{"error":%d, "message":"%s"}`
@@ -50,12 +47,10 @@ func main() {
   err = json.Unmarshal(aConfig, &sConfig)
   if err != nil { panic(err) }
 
-  for a := range sConfig.To {
-    sConfig.tolist += sConfig.To[a]
-    if a+1 < len(sConfig.To) { sConfig.tolist += ", " }
-  }
   if ! sConfig.test {
-    sendMail("server started")
+    if err = sendMail("server started", "once"); err != nil {
+      fmt.Printf("email error: %s\n", err.Error())
+    }
   }
   _, err = fmt.Fprintf(sLog, "RESUME %s\n", time.Now().Format(time.RFC3339))
   if err != nil { panic(err) }
@@ -114,32 +109,48 @@ func timeUp(iClient string) {
   var err error
   _, err = fmt.Fprintf(sLog, "TIMEUP %s, %s %.1fm\n", iClient, time.Now().Format(time.RFC3339), (time.Duration(sConfig.Wait)*time.Second).Minutes())
   if err != nil { panic(err) }
-  sendMail(iClient+" failed to complete an update")
+  sendMail(iClient+" failed to complete an update", "retry")
   err = WriteSync(sDirname+"/timer/"+iClient, []byte(" timeup"), os.O_APPEND|os.O_WRONLY, 0)
   if err != nil { panic(err) }
 }
 
-func sendMail(iMsg string) {
-  for a := range sConfig.To {
+func sendMail(iMsg, iRetry string) error {
+  for {
     var err error
-    aMx, err := net.LookupMX(strings.Split(sConfig.To[a], "@")[1])
-    if err != nil { panic(err) }
-    aConn, err := smtp.Dial(aMx[0].Host+":25")
-    if err != nil { panic(err) }
-    err = aConn.Hello(strings.Split(sConfig.From, "@")[1])
-    if err != nil { panic(err) }
-    err = aConn.Mail(sConfig.From)
-    if err != nil { panic(err) }
-    err = aConn.Rcpt(sConfig.To[a])
-    if err != nil { panic(err) }
-    aW, err := aConn.Data()
-    if err != nil { panic(err) }
-    _, err = fmt.Fprintf(aW, sConfig.Message, sConfig.tolist, sConfig.From, time.Now().Format(time.RFC822Z), iMsg)
-    if err != nil { panic(err) }
-    err = aW.Close()
-    if err != nil { panic(err) }
-    err = aConn.Quit()
-    if err != nil { panic(err) }
+    var aMx []*net.MX
+    var aConn *smtp.Client
+    var aW io.WriteCloser
+    aMx, err = net.LookupMX(strings.Split(sConfig.To, "@")[1])
+    if err == nil {
+      aConn, err = smtp.Dial(aMx[0].Host+":25")
+    }
+    if err == nil {
+      err = aConn.Hello(strings.Split(sConfig.From, "@")[1])
+      if err == nil {
+        err = aConn.Mail(sConfig.From)
+      }
+      if err == nil {
+        err = aConn.Rcpt(sConfig.To)
+      }
+      if err == nil {
+        aW, err = aConn.Data()
+      }
+      if err == nil {
+        _, err = fmt.Fprintf(aW, sConfig.Message, sConfig.To, sConfig.From, time.Now().Format(time.RFC822Z), iMsg)
+        if err1 := aW.Close(); err == nil { err = err1 }
+      }
+      if err == nil {
+        err = aConn.Quit()
+      }
+      if err == nil {
+        return nil
+      }
+      aConn.Close()
+    }
+    if iRetry != "retry" {
+      return err
+    }
+    time.Sleep(time.Duration(1)*time.Minute)
   }
 }
 
@@ -155,7 +166,7 @@ func reqClose(oResp http.ResponseWriter, iReq *http.Request) {
     return
   }
   if ! sTimer[aClient].Stop() && ! sConfig.test {
-    go sendMail(aClient+" failure has been resolved")
+    go sendMail(aClient+" failure has been resolved", "retry")
   }
   sTimer[aClient] = nil
   var err error
