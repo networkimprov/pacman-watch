@@ -1,0 +1,19 @@
+#!/usr/bin/bash
+
+# pacman-watch monitors Arch Linux updates for trouble
+#   https://github.com/networkimprov/pacman-watch
+#
+# "pacman-watch-close" client for pacman watch which closes a ticket
+#
+# Copyright 2014 by Liam Breck
+
+set -e
+
+. /etc/pacman-watch.conf
+
+if [ -f "${TICKET_PATH}" ]
+then
+  curl --retry ${MAX_RETRIES} --retry-delay ${RETRY_DELAY} --silent "http://${PACMAN_WATCH_SERVER}:${PACMAN_WATCH_PORT}/close?client=${CLIENT}&pw=${PASSWORD}"
+
+  rm "${TICKET_PATH}"
+fi

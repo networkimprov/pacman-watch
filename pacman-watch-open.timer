@@ -1,0 +1,16 @@
+# pacman-watch monitors Arch Linux updates for trouble
+#   https://github.com/networkimprov/pacman-watch
+#
+# "pacman-watch-open.timer" systemd timer for pacman-watch-open
+#
+# Copyright 2014 by Liam Breck
+
+[Unit]
+Description=pacman watch open timer
+
+[Timer]
+OnBootSec=30min
+OnUnitActiveSec=30min
+
+[Install]
+WantedBy=timers.target

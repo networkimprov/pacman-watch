@@ -1,0 +1,27 @@
+#!/usr/bin/bash
+
+# pacman-watch monitors Arch Linux updates for trouble
+#   https://github.com/networkimprov/pacman-watch
+#
+# "pacman-watch-open" client for pacman watch which opens a ticket
+#
+# Copyright 2014 by Liam Breck
+
+set -e
+
+. /etc/pacman-watch.conf
+
+pacman -Sy
+
+upgrades="$(pacman -Qu | wc -l)"
+
+if (( ${upgrades} > 0 ))
+then
+  pacman -Su --noconfirm
+
+  curl --retry ${MAX_RETRIES} --retry-delay ${RETRY_DELAY} --silent "http://${PACMAN_WATCH_SERVER}:${PACMAN_WATCH_PORT}/open?client=${CLIENT}&pw=${PASSWORD}"
+
+  touch "${TICKET_PATH}"
+
+  systemctl reboot
+fi

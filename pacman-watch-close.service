@@ -1,0 +1,17 @@
+# pacman-watch monitors Arch Linux updates for trouble
+#   https://github.com/networkimprov/pacman-watch
+#
+# "pacman-watch-close.service" systemd service for pacman-watch-close
+#
+# Copyright 2014 by Liam Breck
+
+[Unit]
+Description=pacman watch close
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/pacman-watch-close
+
+[Install]
+WantedBy=multi-user.target

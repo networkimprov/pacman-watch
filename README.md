@@ -7,8 +7,10 @@ Original discussion at https://github.com/networkimprov/arch-packages/issues/22
 
 ###Server
 
+```
 $ go build watch.go  
 $ ./watch test # creates files in ./  
+```
 
 Browse to http://localhost:4321/
 
@@ -26,3 +28,9 @@ Config file:
 
 ###Client
 
+```
+$ makepkg -si
+# systemctl enable pacman-watch-open.timer
+# systemctl start pacman-watch-open.timer
+# systemctl enable pacman-watch-close.service
+```
