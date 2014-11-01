@@ -26,7 +26,11 @@ import (
 
 var sDirname = filepath.Dir(os.Args[0])
 var sLog *os.File
-var sTimer = map[string]*time.Timer{}
+type tClient struct {
+  timer *time.Timer
+  retry *bool
+}
+var sClient = map[string]*tClient{}
 var sConfig = struct {
   Http string
   Password string
@@ -48,7 +52,7 @@ func main() {
   if err != nil { panic(err) }
 
   if ! sConfig.test {
-    if err = sendMail("server started", "once"); err != nil {
+    if err = sendMail("server started", nil); err != nil {
       fmt.Printf("email error: %s\n", err.Error())
     }
   }
@@ -66,13 +70,17 @@ func main() {
     }
     aTime := strings.Split(string(aData), " ")
     if len(aTime) > 1 && aTime[1] == "timeup" {
-      sTimer[aClient] = new(time.Timer)
+      sClient[aClient] = &tClient{ timer: new(time.Timer) }
       continue
     }
     aOpen, err := time.Parse(time.RFC3339, aTime[0])
     if err != nil { panic(err) }
     aWait := time.Duration(sConfig.Wait)*time.Second - time.Since(aOpen)
-    sTimer[aClient] = time.AfterFunc(aWait, func() { timeUp(aClient) })
+    aRetry := true
+    sClient[aClient] = &tClient{
+      retry: &aRetry,
+      timer: time.AfterFunc(aWait, func() { timeUp(aClient, &aRetry) }),
+    }
   }
 
   http.HandleFunc("/", reqLog)
@@ -96,28 +104,32 @@ func reqOpen(oResp http.ResponseWriter, iReq *http.Request) {
     return
   }
   aClient := aV.Get("client")
-  if sTimer[aClient] != nil {
+  if sClient[aClient] != nil {
     fmt.Fprintf(oResp, "error\r\nalready opened\r\n")
     return
   }
   aTime := time.Now().Format(time.RFC3339)
   err := WriteSync(sDirname+"/timer/"+aClient, []byte(aTime), os.O_CREATE|os.O_WRONLY, os.FileMode(0644))
   if err != nil { panic(err) }
-  sTimer[aClient] = time.AfterFunc(time.Duration(sConfig.Wait)*time.Second, func() { timeUp(aClient) })
+  aRetry := true
+  sClient[aClient] = &tClient{
+    retry: &aRetry,
+    timer: time.AfterFunc(time.Duration(sConfig.Wait)*time.Second, func() { timeUp(aClient, &aRetry) }),
+  }
   fmt.Fprintf(oResp, "ok\r\n%s@%s\r\n", aClient, aTime)
 }
 
-func timeUp(iClient string) {
+func timeUp(iClient string, iRetry *bool) {
   fmt.Println("time to email for help!")
   var err error
   _, err = fmt.Fprintf(sLog, "TIMEUP %s, %s %.1fm\n", iClient, time.Now().Format(time.RFC3339), (time.Duration(sConfig.Wait)*time.Second).Minutes())
   if err != nil { panic(err) }
-  sendMail(iClient+" failed to complete an update", "retry")
+  sendMail(iClient+" failed to complete an update", iRetry)
   err = WriteSync(sDirname+"/timer/"+iClient, []byte(" timeup"), os.O_APPEND|os.O_WRONLY, 0)
   if err != nil { panic(err) }
 }
 
-func sendMail(iMsg, iRetry string) error {
+func sendMail(iMsg string, iRetry *bool) error {
   for {
     var err error
     var aMx []*net.MX
@@ -150,7 +162,7 @@ func sendMail(iMsg, iRetry string) error {
       }
       aConn.Close()
     }
-    if iRetry != "retry" {
+    if iRetry == nil || *iRetry == false {
       return err
     }
     time.Sleep(time.Duration(1)*time.Minute)
@@ -164,14 +176,15 @@ func reqClose(oResp http.ResponseWriter, iReq *http.Request) {
     return
   }
   aClient := aV.Get("client")
-  if sTimer[aClient] == nil {
+  if sClient[aClient] == nil {
     fmt.Fprintf(oResp, "error\r\nalready closed\r\n")
     return
   }
-  if ! sTimer[aClient].Stop() && ! sConfig.test {
-    go sendMail(aClient+" failure has been resolved", "retry")
+  if ! sClient[aClient].timer.Stop() && ! sConfig.test {
+    go sendMail(aClient+" failure has been resolved", nil)
   }
-  sTimer[aClient] = nil
+  *sClient[aClient].retry = false
+  sClient[aClient] = nil
   var err error
   aTicket := strings.Split(aV.Get("ticket"), "@")
   aStart, err := time.Parse(time.RFC3339, aTicket[1])

@@ -6,14 +6,15 @@ Monitor Arch Linux updates for trouble.
 Original discussion at https://github.com/networkimprov/arch-packages/issues/22
 
 ###Server
-$ go build service.go
-$ ./service test
+
+$ go build service.go  
+$ ./service test  
 
 Browse to http://localhost:4321/
 
-Issues:
-Email dispatch retries forever regardless of error unless sent a close and restarted.
-There is a race condition where reqClose and timeUp modify the /timer/client file.
+Issues:  
+There is a race condition where reqClose and timeUp modify the /timer/client file.  
+Concurrent writes to sClient map[string]*tClient are not safe.  
 
 Config file:
 
