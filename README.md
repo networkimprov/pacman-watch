@@ -23,7 +23,6 @@ Config file:
     "Wait": integer time in seconds to wait for close message before sending email
     "To": should point to a mailing list
     "From": email address of sender
-    "Message": should probably be removed from config
 
 ###Client
 

@@ -35,10 +35,11 @@ var sConfig = struct {
   Http string
   Password string
   Wait int
-  To, From, Message string
+  To, From string
   test bool
 }{test : len(os.Args) > 1 && os.Args[1] == "test"}
 //var sResponseTpl = `{"error":%d, "message":"%s"}`
+const kEmailTmpl = "To: %s\r\nFrom: %s\r\nSubject: pacman-watch %s\r\nDate: %s\r\n\r\n%s"
 
 func main() {
   var err error
@@ -52,7 +53,7 @@ func main() {
   if err != nil { panic(err) }
 
   if ! sConfig.test {
-    if err = sendMail("server started", nil); err != nil {
+    if err = sendMail("status", "server started", nil); err != nil {
       fmt.Printf("email error: %s\n", err.Error())
     }
   }
@@ -124,12 +125,12 @@ func timeUp(iClient string, iRetry *bool) {
   var err error
   _, err = fmt.Fprintf(sLog, "TIMEUP %s, %s %.1fm\n", iClient, time.Now().Format(time.RFC3339), (time.Duration(sConfig.Wait)*time.Second).Minutes())
   if err != nil { panic(err) }
-  sendMail(iClient+" failed to complete an update", iRetry)
+  sendMail("alert", iClient+" failed to complete an update", iRetry)
   err = WriteSync(sDirname+"/timer/"+iClient, []byte(" timeup"), os.O_APPEND|os.O_WRONLY, 0)
   if err != nil { panic(err) }
 }
 
-func sendMail(iMsg string, iRetry *bool) error {
+func sendMail(iSubject, iMsg string, iRetry *bool) error {
   for {
     var err error
     var aMx []*net.MX
@@ -151,7 +152,7 @@ func sendMail(iMsg string, iRetry *bool) error {
         aW, err = aConn.Data()
       }
       if err == nil {
-        _, err = fmt.Fprintf(aW, sConfig.Message, sConfig.To, sConfig.From, time.Now().Format(time.RFC822Z), iMsg)
+        _, err = fmt.Fprintf(aW, kEmailTmpl, sConfig.To, sConfig.From, iSubject, time.Now().Format(time.RFC822Z), iMsg)
         if err1 := aW.Close(); err == nil { err = err1 }
       }
       if err == nil {
@@ -181,7 +182,7 @@ func reqClose(oResp http.ResponseWriter, iReq *http.Request) {
     return
   }
   if ! sClient[aClient].timer.Stop() && ! sConfig.test {
-    go sendMail(aClient+" failure has been resolved", nil)
+    go sendMail("status", aClient+" failure has been resolved", nil)
   }
   *sClient[aClient].retry = false
   sClient[aClient] = nil
