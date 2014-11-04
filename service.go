@@ -86,7 +86,7 @@ func main() {
 }
 
 func reqLog(oResp http.ResponseWriter, iReq *http.Request) {
-  fmt.Fprintf(oResp, "/open?client=xyz&pw=password\r\n/close?client=xyz&ticket=xyz@time&pw=password\r\n\r\n")
+  fmt.Fprintf(oResp, "/open?client=xyz&pw=password\r\n/close?client=xyz&pw=password\r\n\r\n")
   aF, err := os.Open(sDirname+"/watch.log")
   if err != nil { panic(err) }
   _, err = io.Copy(oResp, aF)
@@ -112,7 +112,7 @@ func reqOpen(oResp http.ResponseWriter, iReq *http.Request) {
     retry: &aRetry,
     timer: time.AfterFunc(time.Duration(sConfig.Wait)*time.Second, func() { timeUp(aClient, &aRetry) }),
   }
-  fmt.Fprintf(oResp, "ok\r\n%s@%s\r\n", aClient, aTime)
+  fmt.Fprintf(oResp, "ok\r\n")
 }
 
 func timeUp(iClient string, iRetry *bool) {
@@ -180,10 +180,11 @@ func reqClose(oResp http.ResponseWriter, iReq *http.Request) {
   *sClient[aClient].retry = false
   sClient[aClient] = nil
   var err error
-  aTicket := strings.Split(aV.Get("ticket"), "@")
-  aStart, err := time.Parse(time.RFC3339, aTicket[1])
+  aData, err := ioutil.ReadFile(sDirname+"/timer/"+aClient)
   if err != nil { panic(err) }
-  _, err = fmt.Fprintf(sLog, "closed %s, %s %.1fm\n", aTicket[0], aTicket[1], time.Since(aStart).Minutes())
+  aStart, err := time.Parse(time.RFC3339, string(aData))
+  if err != nil { panic(err) }
+  _, err = fmt.Fprintf(sLog, "closed %s, %s %.1fm\n", aClient, aData, time.Since(aStart).Minutes())
   if err != nil { panic(err) }
   err = WriteSync(sDirname+"/timer/"+aClient, []byte{}, os.O_TRUNC|os.O_WRONLY, 0)
   if err != nil { panic(err) }
