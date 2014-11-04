@@ -69,12 +69,7 @@ func main() {
     if len(aData) == 0 {
       continue
     }
-    aTime := strings.Split(string(aData), " ")
-    if len(aTime) > 1 && aTime[1] == "timeup" {
-      sClient[aClient] = &tClient{ timer: new(time.Timer) }
-      continue
-    }
-    aOpen, err := time.Parse(time.RFC3339, aTime[0])
+    aOpen, err := time.Parse(time.RFC3339, string(aData))
     if err != nil { panic(err) }
     aWait := time.Duration(sConfig.Wait)*time.Second - time.Since(aOpen)
     aRetry := true
@@ -126,8 +121,6 @@ func timeUp(iClient string, iRetry *bool) {
   _, err = fmt.Fprintf(sLog, "TIMEUP %s, %s %.1fm\n", iClient, time.Now().Format(time.RFC3339), (time.Duration(sConfig.Wait)*time.Second).Minutes())
   if err != nil { panic(err) }
   sendMail("alert", iClient+" failed to complete an update", iRetry)
-  err = WriteSync(sDirname+"/timer/"+iClient, []byte(" timeup"), os.O_APPEND|os.O_WRONLY, 0)
-  if err != nil { panic(err) }
 }
 
 func sendMail(iSubject, iMsg string, iRetry *bool) error {

@@ -13,7 +13,7 @@ $ ./service test
 Browse to http://localhost:4321/
 
 Issues:  
-There is a race condition where reqClose and timeUp modify the /timer/client file.  
+Multiple emails may be sent if server is restarted after timeout.  
 Concurrent writes to sClient map[string]*tClient are not safe.  
 
 Config file:
