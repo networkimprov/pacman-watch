@@ -20,6 +20,7 @@ import (
   "os"
   "net/smtp"
   "strings"
+  "sync"
   "time"
 )
 
@@ -28,9 +29,13 @@ var sDirname = filepath.Dir(os.Args[0])
 var sLog *os.File
 type tClient struct {
   timer *time.Timer
-  retry *bool
+  retry bool
+  open time.Time
+  timeup bool
 }
 var sClient = map[string]*tClient{}
+var sStatusClient = &tClient{timeup: true}
+var sStatus sync.Mutex
 var sConfig = struct {
   Http string
   Password string
@@ -40,6 +45,7 @@ var sConfig = struct {
 }{test : len(os.Args) > 1 && os.Args[1] == "test"}
 //var sResponseTpl = `{"error":%d, "message":"%s"}`
 const kEmailTmpl = "To: %s\r\nFrom: %s\r\nSubject: pacman-watch %s\r\nDate: %s\r\n\r\n%s"
+
 
 func main() {
   var err error
@@ -66,31 +72,48 @@ func main() {
     aClient := aPend[a].Name()
     aData, err := ioutil.ReadFile(sDirname+"/timer/"+aClient)
     if err != nil { panic(err) }
-    if len(aData) == 0 {
-      continue
-    }
-    aOpen, err := time.Parse(time.RFC3339, string(aData))
+    aPair := strings.Split(string(aData), " ")
+    aOpen, err := time.Parse(time.RFC3339, aPair[0])
     if err != nil { panic(err) }
-    aWait := time.Duration(sConfig.Wait)*time.Second - time.Since(aOpen)
-    aRetry := true
-    sClient[aClient] = &tClient{
-      retry: &aRetry,
-      timer: time.AfterFunc(aWait, func() { timeUp(aClient, &aRetry) }),
+    if aPair[1] == "closed" {
+      updateStatus(&tClient{open: aOpen, timeup: false})
+    } else {
+      aNew := &tClient{open: aOpen, retry: true}
+      sClient[aClient] = aNew
+      aNew.timer = time.AfterFunc(time.Duration(sConfig.Wait)*time.Second - time.Since(aOpen), func() { timeUp(aClient, aNew) })
     }
   }
 
   http.HandleFunc("/", reqLog)
   http.HandleFunc("/open", reqOpen)
   http.HandleFunc("/close", reqClose)
+  http.HandleFunc("/status", reqStatus)
   http.ListenAndServe(sConfig.Http, nil)
 }
 
 func reqLog(oResp http.ResponseWriter, iReq *http.Request) {
-  fmt.Fprintf(oResp, "/open?client=xyz&pw=password\r\n/close?client=xyz&pw=password\r\n\r\n")
+  fmt.Fprintf(oResp, "/open?client=xyz&pw=password\r\n/close?client=xyz&pw=password\r\n/status\r\n\r\n")
   aF, err := os.Open(sDirname+"/watch.log")
   if err != nil { panic(err) }
+  defer aF.Close()
   _, err = io.Copy(oResp, aF)
   if err != nil { panic(err) }
+}
+
+func reqStatus(oResp http.ResponseWriter, iReq *http.Request) {
+  aS := "ok"
+  if sStatusClient.timeup {
+    aS = "error"
+  }
+  fmt.Fprintf(oResp, "%s\r\n", aS)
+}
+
+func updateStatus(iObj *tClient) {
+  sStatus.Lock()
+  if iObj != sStatusClient && iObj.open.After(sStatusClient.open) {
+    sStatusClient = iObj
+  }
+  sStatus.Unlock()
 }
 
 func reqOpen(oResp http.ResponseWriter, iReq *http.Request) {
@@ -104,23 +127,23 @@ func reqOpen(oResp http.ResponseWriter, iReq *http.Request) {
     fmt.Fprintf(oResp, "error\r\nalready opened\r\n")
     return
   }
-  aTime := time.Now().Format(time.RFC3339)
-  err := WriteSync(sDirname+"/timer/"+aClient, []byte(aTime), os.O_CREATE|os.O_WRONLY, os.FileMode(0644))
+  aTime := time.Now().Format(time.RFC3339+" ")
+  err := WriteSync(sDirname+"/timer/"+aClient, []byte(aTime), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(0644))
   if err != nil { panic(err) }
-  aRetry := true
-  sClient[aClient] = &tClient{
-    retry: &aRetry,
-    timer: time.AfterFunc(time.Duration(sConfig.Wait)*time.Second, func() { timeUp(aClient, &aRetry) }),
-  }
+  aNew := &tClient{open: time.Now(), retry: true}
+  aNew.timer = time.AfterFunc(time.Duration(sConfig.Wait)*time.Second, func() { timeUp(aClient, aNew) })
+  sClient[aClient] = aNew
   fmt.Fprintf(oResp, "ok\r\n")
 }
 
-func timeUp(iClient string, iRetry *bool) {
+func timeUp(iClient string, iObj *tClient) {
   fmt.Println("time to email for help!")
+  iObj.timeup = true
+  updateStatus(iObj)
   var err error
   _, err = fmt.Fprintf(sLog, "TIMEUP %s, %s %.1fm\n", iClient, time.Now().Format(time.RFC3339), (time.Duration(sConfig.Wait)*time.Second).Minutes())
   if err != nil { panic(err) }
-  sendMail("alert", iClient+" failed to complete an update", iRetry)
+  sendMail("alert", iClient+" failed to complete an update", &iObj.retry)
 }
 
 func sendMail(iSubject, iMsg string, iRetry *bool) error {
@@ -174,19 +197,24 @@ func reqClose(oResp http.ResponseWriter, iReq *http.Request) {
     fmt.Fprintf(oResp, "error\r\nalready closed\r\n")
     return
   }
-  if ! sClient[aClient].timer.Stop() && ! sConfig.test {
-    go sendMail("status", aClient+" failure has been resolved", nil)
+  aObj := sClient[aClient]
+  if ! aObj.timer.Stop() {
+    aObj.retry = false
+    if ! sConfig.test {
+      go sendMail("status", aClient+" failure has been resolved", nil)
+    }
   }
-  *sClient[aClient].retry = false
+  aObj.timeup = false
+  updateStatus(aObj)
   sClient[aClient] = nil
   var err error
   aData, err := ioutil.ReadFile(sDirname+"/timer/"+aClient)
   if err != nil { panic(err) }
-  aStart, err := time.Parse(time.RFC3339, string(aData))
+  aStart, err := time.Parse(time.RFC3339+" ", string(aData))
   if err != nil { panic(err) }
   _, err = fmt.Fprintf(sLog, "closed %s, %s %.1fm\n", aClient, aData, time.Since(aStart).Minutes())
   if err != nil { panic(err) }
-  err = WriteSync(sDirname+"/timer/"+aClient, []byte{}, os.O_TRUNC|os.O_WRONLY, 0)
+  err = WriteSync(sDirname+"/timer/"+aClient, []byte("closed"), os.O_APPEND|os.O_WRONLY, 0)
   if err != nil { panic(err) }
   fmt.Fprintf(oResp, "ok\r\n")
 }
