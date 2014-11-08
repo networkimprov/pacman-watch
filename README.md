@@ -7,8 +7,8 @@ Original discussion at https://github.com/networkimprov/arch-packages/issues/22
 
 ###Server
 
-$ go build service.go  
-$ ./service test  
+$ go build watch.go  
+$ ./watch test # creates files in ./  
 
 Browse to http://localhost:4321/
 

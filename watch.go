@@ -49,7 +49,7 @@ const kEmailTmpl = "To: %s\r\nFrom: %s\r\nSubject: pacman-watch %s\r\nDate: %s\r
 
 func main() {
   var err error
-  err = os.MkdirAll(sDirname+"/timer", os.FileMode(0755))
+  err = os.MkdirAll(sDirname+"/watch.d", os.FileMode(0755))
   if err != nil { panic(err) }
   sLog, err = os.OpenFile(sDirname+"/watch.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, os.FileMode(0644))
   if err != nil { panic(err) }
@@ -66,11 +66,11 @@ func main() {
   _, err = fmt.Fprintf(sLog, "RESUME %s\n", time.Now().Format(time.RFC3339))
   if err != nil { panic(err) }
 
-  aPend, err := ioutil.ReadDir(sDirname+"/timer")
+  aPend, err := ioutil.ReadDir(sDirname+"/watch.d")
   if err != nil { panic(err) }
   for a := range aPend {
     aClient := aPend[a].Name()
-    aData, err := ioutil.ReadFile(sDirname+"/timer/"+aClient)
+    aData, err := ioutil.ReadFile(sDirname+"/watch.d/"+aClient)
     if err != nil { panic(err) }
     aPair := strings.Split(string(aData), " ")
     aOpen, err := time.Parse(time.RFC3339, aPair[0])
@@ -128,7 +128,7 @@ func reqOpen(oResp http.ResponseWriter, iReq *http.Request) {
     aObj.retry = false
   }
   aTime := time.Now().Format(time.RFC3339+" ")
-  err := WriteSync(sDirname+"/timer/"+aClient, []byte(aTime), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(0644))
+  err := WriteSync(sDirname+"/watch.d/"+aClient, []byte(aTime), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(0644))
   if err != nil { panic(err) }
   aNew := &tClient{open: time.Now(), retry: true}
   aNew.timer = time.AfterFunc(time.Duration(sConfig.Wait)*time.Second, func() { timeUp(aClient, aNew) })
@@ -208,13 +208,13 @@ func reqClose(oResp http.ResponseWriter, iReq *http.Request) {
   updateStatus(aObj)
   sClient[aClient] = nil
   var err error
-  aData, err := ioutil.ReadFile(sDirname+"/timer/"+aClient)
+  aData, err := ioutil.ReadFile(sDirname+"/watch.d/"+aClient)
   if err != nil { panic(err) }
   aStart, err := time.Parse(time.RFC3339+" ", string(aData))
   if err != nil { panic(err) }
   _, err = fmt.Fprintf(sLog, "closed %s, %s %.1fm\n", aClient, aData, time.Since(aStart).Minutes())
   if err != nil { panic(err) }
-  err = WriteSync(sDirname+"/timer/"+aClient, []byte("closed"), os.O_APPEND|os.O_WRONLY, 0)
+  err = WriteSync(sDirname+"/watch.d/"+aClient, []byte("closed"), os.O_APPEND|os.O_WRONLY, 0)
   if err != nil { panic(err) }
   fmt.Fprintf(oResp, "ok\r\n")
 }
