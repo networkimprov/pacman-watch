@@ -123,9 +123,9 @@ func reqOpen(oResp http.ResponseWriter, iReq *http.Request) {
     return
   }
   aClient := aV.Get("client")
-  if sClient[aClient] != nil {
-    fmt.Fprintf(oResp, "error\r\nalready opened\r\n")
-    return
+  aObj := sClient[aClient]
+  if aObj != nil && ! aObj.timer.Stop() {
+    aObj.retry = false
   }
   aTime := time.Now().Format(time.RFC3339+" ")
   err := WriteSync(sDirname+"/timer/"+aClient, []byte(aTime), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(0644))
@@ -193,11 +193,11 @@ func reqClose(oResp http.ResponseWriter, iReq *http.Request) {
     return
   }
   aClient := aV.Get("client")
-  if sClient[aClient] == nil {
+  aObj := sClient[aClient]
+  if aObj == nil {
     fmt.Fprintf(oResp, "error\r\nalready closed\r\n")
     return
   }
-  aObj := sClient[aClient]
   if ! aObj.timer.Stop() {
     aObj.retry = false
     if ! sConfig.test {
