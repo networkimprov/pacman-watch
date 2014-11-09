@@ -127,8 +127,8 @@ func reqOpen(oResp http.ResponseWriter, iReq *http.Request) {
   if aObj != nil && ! aObj.timer.Stop() {
     aObj.retry = false
   }
-  aTime := time.Now().Format(time.RFC3339+" ")
-  err := WriteSync(sDirname+"/watch.d/"+aClient, []byte(aTime), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(0644))
+  aTime := time.Now().Format(time.RFC3339)
+  err := WriteSync(sDirname+"/watch.d/"+aClient, []byte(aTime+" "), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(0644))
   if err != nil { panic(err) }
   aNew := &tClient{open: time.Now(), retry: true}
   aNew.timer = time.AfterFunc(time.Duration(sConfig.Wait)*time.Second, func() { timeUp(aClient, aNew) })
@@ -141,7 +141,7 @@ func timeUp(iClient string, iObj *tClient) {
   iObj.timeup = true
   updateStatus(iObj)
   var err error
-  _, err = fmt.Fprintf(sLog, "TIMEUP %s, %s %.1fm\n", iClient, time.Now().Format(time.RFC3339), (time.Duration(sConfig.Wait)*time.Second).Minutes())
+  _, err = fmt.Fprintf(sLog, "TIMEUP %s, %s %.1fm\n", iClient, time.Now().Format(time.RFC3339), time.Since(iObj.open).Minutes())
   if err != nil { panic(err) }
   sendMail("alert", iClient+" failed to complete an update", &iObj.retry)
 }
@@ -210,7 +210,8 @@ func reqClose(oResp http.ResponseWriter, iReq *http.Request) {
   var err error
   aData, err := ioutil.ReadFile(sDirname+"/watch.d/"+aClient)
   if err != nil { panic(err) }
-  aStart, err := time.Parse(time.RFC3339+" ", string(aData))
+  aData = aData[:len(aData)-1]
+  aStart, err := time.Parse(time.RFC3339, string(aData))
   if err != nil { panic(err) }
   _, err = fmt.Fprintf(sLog, "closed %s, %s %.1fm\n", aClient, aData, time.Since(aStart).Minutes())
   if err != nil { panic(err) }
