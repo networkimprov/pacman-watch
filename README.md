@@ -20,7 +20,8 @@ Config file:
 
     "Http": host:port for listener
     "Password": http requests must contain this
-    "Wait": integer time in seconds to wait for close message before sending email
+    "UpdateWait": integer time in seconds to wait for close message before sending email
+    "OkWait": integer time in minutes to wait for next client contact
     "To": should point to a mailing list
     "From": email address of sender
 
