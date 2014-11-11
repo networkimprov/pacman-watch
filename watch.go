@@ -159,11 +159,12 @@ func reqPing(oResp http.ResponseWriter, iReq *http.Request) {
 func timeUp(iClient string, iObj *tClient) {
   fmt.Println("time to email for help!")
   aReason := "timeup"; if iObj.flag { aReason = "UPDATE" }
+  aMsg := " has not been heard from in too long"; if iObj.flag { aMsg = " failed to complete an update" }
   iObj.flag = true
   _, err := fmt.Fprintf(sLog, "%s %s, %s %.1fm\n", aReason, iClient, time.Now().Format(time.RFC3339), time.Since(iObj.open).Minutes())
   if err != nil { panic(err) }
   iObj.timeup <- 0
-  sendMail("alert", iClient+" failed to complete an update", iObj.retry)
+  sendMail("alert", iClient+aMsg, iObj.retry)
 }
 
 func sendMail(iSubject, iMsg string, iRetry *bool) error {
