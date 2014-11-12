@@ -32,6 +32,7 @@ type tClient struct {
   retry *bool
   open time.Time
   flag bool
+  updt bool
   timeup chan byte
 }
 var sClient = map[string]*tClient{}
@@ -70,17 +71,17 @@ func main() {
   _, err = fmt.Fprintf(sLog, "RESUME %s\n", time.Now().Format(time.RFC3339))
   if err != nil { panic(err) }
 
-  aPend, err := ioutil.ReadDir(sDirname+"/watch.d")
+  aDir, err := ioutil.ReadDir(sDirname+"/watch.d")
   if err != nil { panic(err) }
-  for a := range aPend {
-    aClient := aPend[a].Name()
+  for a := range aDir {
+    aClient := aDir[a].Name()
     aData, err := ioutil.ReadFile(sDirname+"/watch.d/"+aClient)
     if err != nil { panic(err) }
     aPair := strings.Split(string(aData), " ")
     aOpen, err := time.Parse(time.RFC3339, aPair[0])
     if err != nil { panic(err) }
-    aRetry := true
-    aNew := &tClient{open: aOpen, retry: &aRetry, flag: aPair[1] == "update", timeup: make(chan byte, 1)}
+    aNew := &tClient{open: aOpen, retry: new(bool), flag: aPair[1] != "ok", updt: aPair[1] == "update", timeup: make(chan byte, 1)}
+    *aNew.retry = true
     aWait := sConfig.okD; if aNew.flag { aWait = sConfig.updateD }
     aNew.timer = time.AfterFunc(aWait - time.Since(aOpen), func() { timeUp(aClient, aNew) })
     sClient[aClient] = aNew
@@ -94,7 +95,7 @@ func main() {
 }
 
 func reqLog(oResp http.ResponseWriter, iReq *http.Request) {
-  fmt.Fprintf(oResp, "/ping?client=xyz&pw=password&status={ok,update}\r\n/status\r\n\r\n")
+  fmt.Fprintf(oResp, "/ping?client=xyz&pw=password&status={ok,update}\r\n/status\r\n\r\nstatus now %v\r\n\r\n", !sStatusClient.flag)
   aF, err := os.Open(sDirname+"/watch.log")
   if err != nil { panic(err) }
   defer aF.Close()
@@ -103,16 +104,13 @@ func reqLog(oResp http.ResponseWriter, iReq *http.Request) {
 }
 
 func reqStatus(oResp http.ResponseWriter, iReq *http.Request) {
-  aS := "ok"
-  if sStatusClient.flag {
-    aS = "error"
-  }
+  aS := "ok"; if sStatusClient.flag { aS = "error" }
   fmt.Fprintf(oResp, "%s\r\n", aS)
 }
 
 func updateStatus(iObj *tClient) {
   sStatus.Lock()
-  if iObj != sStatusClient && iObj.open.After(sStatusClient.open) {
+  if iObj != sStatusClient && (iObj.updt || !sStatusClient.updt) && iObj.open.After(sStatusClient.open) {
     sStatusClient = iObj
   }
   sStatus.Unlock()
@@ -133,10 +131,8 @@ func reqPing(oResp http.ResponseWriter, iReq *http.Request) {
   aObj := sClient[aClient]
   aWait := sConfig.updateD; if aStatus == "ok" { aWait = sConfig.okD }
   if aObj == nil {
-    aObj = &tClient{
-      timer: time.AfterFunc(aWait, func() { timeUp(aClient, aObj) }),
-      timeup: make(chan byte, 1),
-    }
+    aObj = &tClient{timeup: make(chan byte, 1)}
+    aObj.timer = time.AfterFunc(aWait, func() { timeUp(aClient, aObj) })
     sClient[aClient] = aObj
   } else if ! aObj.timer.Reset(aWait) {
     <-aObj.timeup
@@ -146,9 +142,10 @@ func reqPing(oResp http.ResponseWriter, iReq *http.Request) {
     }
   }
   aRetry := true
-  aObj.open = time.Now()
   aObj.retry = &aRetry
-  aObj.flag = aStatus == "update"
+  aObj.open = time.Now()
+  aObj.flag = aStatus != "ok"
+  aObj.updt = aStatus == "update"
   updateStatus(aObj)
   aTime := aObj.open.Format(time.RFC3339)
   err := WriteSync(sDirname+"/watch.d/"+aClient, []byte(aTime+" "+aStatus), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(0644))
