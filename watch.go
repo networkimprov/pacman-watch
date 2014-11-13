@@ -110,7 +110,7 @@ func reqStatus(oResp http.ResponseWriter, iReq *http.Request) {
 
 func updateStatus(iObj *tClient) {
   sStatus.Lock()
-  if iObj != sStatusClient && (iObj.updt || !sStatusClient.updt) && iObj.open.After(sStatusClient.open) {
+  if iObj != sStatusClient && (iObj.updt && !sStatusClient.updt || iObj.updt == sStatusClient.updt && iObj.open.After(sStatusClient.open)) {
     sStatusClient = iObj
   }
   sStatus.Unlock()
