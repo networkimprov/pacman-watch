@@ -77,15 +77,17 @@ func main() {
     aClient := aDir[a].Name()
     aData, err := ioutil.ReadFile(sDirname+"/watch.d/"+aClient)
     if err != nil { panic(err) }
-    aPair := strings.Split(string(aData), " ")
-    aOpen, err := time.Parse(time.RFC3339, aPair[0])
+    aRec := strings.Split(string(aData), " ")
+    aOpen, err := time.Parse(time.RFC3339, aRec[0])
     if err != nil { panic(err) }
-    aNew := &tClient{open: aOpen, retry: new(bool), flag: aPair[1] != "ok", updt: aPair[1] == "update", timeup: make(chan byte, 1)}
+    aNew := &tClient{open: aOpen, retry: new(bool), flag: aRec[1] != "ok", updt: aRec[1] == "update", timeup: make(chan byte, 1)}
     *aNew.retry = true
     aWait := sConfig.okD; if aNew.flag { aWait = sConfig.updateD }
     aNew.timer = time.AfterFunc(aWait - time.Since(aOpen), func() { timeUp(aClient, aNew) })
     sClient[aClient] = aNew
-    updateStatus(aNew)
+    if aRec[2] == "1" && aNew.open.After(sStatusClient.open) {
+      sStatusClient = aNew
+    }
   }
 
   http.HandleFunc("/", reqLog)
@@ -108,12 +110,15 @@ func reqStatus(oResp http.ResponseWriter, iReq *http.Request) {
   fmt.Fprintf(oResp, "%s\r\n", aS)
 }
 
-func updateStatus(iObj *tClient) {
+func updateStatus(iObj *tClient) string {
   sStatus.Lock()
-  if iObj != sStatusClient && (iObj.updt && !sStatusClient.updt || iObj.updt == sStatusClient.updt && iObj.open.After(sStatusClient.open)) {
+  iObj.open = time.Now()
+  if iObj != sStatusClient && (iObj.updt || !sStatusClient.updt) {
     sStatusClient = iObj
   }
+  oSc := "0"; if iObj == sStatusClient { oSc = "1" }
   sStatus.Unlock()
+  return oSc
 }
 
 func reqPing(oResp http.ResponseWriter, iReq *http.Request) {
@@ -143,12 +148,11 @@ func reqPing(oResp http.ResponseWriter, iReq *http.Request) {
   }
   aRetry := true
   aObj.retry = &aRetry
-  aObj.open = time.Now()
   aObj.flag = aStatus != "ok"
   aObj.updt = aStatus == "update"
-  updateStatus(aObj)
+  aSc := updateStatus(aObj)
   aTime := aObj.open.Format(time.RFC3339)
-  err := WriteSync(sDirname+"/watch.d/"+aClient, []byte(aTime+" "+aStatus), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(0644))
+  err := WriteSync(sDirname+"/watch.d/"+aClient, []byte(aTime+" "+aStatus+" "+aSc), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(0644))
   if err != nil { panic(err) }
   fmt.Fprintf(oResp, "ok\r\n")
 }
