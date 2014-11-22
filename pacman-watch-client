@@ -63,7 +63,7 @@ let itime=PERIOD*60
 if [ -f "$RESTART_FLAG" ]; then
   #test scripts here
   ping_server ok
-  echo "ping"
+  echo "ping ok"
   rm "$RESTART_FLAG" || exit 1
   echo "sleeping"
   sleep $itime
@@ -74,19 +74,20 @@ while true; do
     sleep $RETRY_PAUSE
     continue
   fi
+  echo "sync"
   updates=$(pacman -Qu) || exit 1
   if [ "$updates" ]; then
-    echo "updating"
     if pacman_neterr -Su --noconfirm; then
       sleep $RETRY_PAUSE
       continue
     fi
+    echo "update"
     status=update
   fi
   if ! ping_server $status; then
     continue
   fi
-  echo "ping"
+  echo "ping $status"
   if [ $status == update ]; then
     touch "$RESTART_FLAG" || exit 1
     echo "rebooting"
