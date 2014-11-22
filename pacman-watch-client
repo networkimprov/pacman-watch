@@ -1,0 +1,99 @@
+#!/bin/bash
+
+# pacman-watch monitors Arch Linux updates for trouble
+# https://github.com/networkimprov/pacman-watch
+#
+# "pacman-watch-client" tries updates and notifies server of status
+#
+# Copyright 2014 by Liam Breck
+
+
+#. /etc/pacman-watch.conf
+
+# move to .conf
+CLIENT="anvl1"
+HOST="localhost:4321"
+PASSWORD="password"
+let PERIOD=1
+let PING_RETRY=3
+let RETRY_PAUSE=5
+RESTART_FLAG="/var/tmp/pacman-watch-restart"
+# for archless testing
+#pacman() {
+#  s=1$(date +%N)
+#  if [ $1 == '-Qu' ]; then
+#    if (( s%2 == 1 )); then echo a; fi
+#  else
+#    if (( s%5 == 1 )); then echo 'download library error' >&2; return 1; fi
+#  fi
+#  return 0
+#}
+#zero=$0
+#systemctl() { exec $zero; }
+
+ping_server() {
+  data=$(curl --retry $PING_RETRY --retry-delay $RETRY_PAUSE -sS "http://${HOST}/ping?pw=${PASSWORD}&client=${CLIENT}&status=$1")
+  case $? in
+    0) ;;
+    6|7|55|56) return 1 ;;
+    *) exit 1 ;;
+  esac
+  if [ "$data" != $'ok\r' ]; then
+    echo "$data" >&2
+    exit 1
+  fi
+  return 0
+}
+
+pacman_neterr() {
+  result=$(pacman "$@" 2>&1 >/dev/null)
+  if [ $? != 0 ]; then
+    echo "$result" >&2
+    if echo "$result" | grep -q 'download library error' ; then
+      return 0
+    fi
+    exit 1
+  fi
+  return 1
+}
+
+status=ok
+let itime=PERIOD*60
+
+if [ -f "$RESTART_FLAG" ]; then
+  #test scripts here
+  ping_server ok
+  echo "ping"
+  rm "$RESTART_FLAG" || exit 1
+  echo "sleeping"
+  sleep $itime
+fi
+
+while true; do
+  if pacman_neterr -Sy; then
+    sleep $RETRY_PAUSE
+    continue
+  fi
+  updates=$(pacman -Qu) || exit 1
+  if [ "$updates" ]; then
+    echo "updating"
+    if pacman_neterr -Su --noconfirm; then
+      sleep $RETRY_PAUSE
+      continue
+    fi
+    status=update
+  fi
+  if ! ping_server $status; then
+    continue
+  fi
+  echo "ping"
+  if [ $status == update ]; then
+    touch "$RESTART_FLAG" || exit 1
+    echo "rebooting"
+    systemctl reboot || exit 1
+    exit 0
+  fi
+  echo "sleeping"
+  sleep $itime
+done
+
