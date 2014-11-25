@@ -22,7 +22,7 @@ RESTART_FLAG="/var/tmp/pacman-watch-restart"
 #pacman() {
 #  s=1$(date +%N)
 #  if [ $1 == '-Qu' ]; then
-#    if (( s%2 == 1 )); then echo a; fi
+#    if (( s%2 == 1 )); then echo a; else return 1; fi
 #  else
 #    if (( s%5 == 1 )); then echo 'download library error' >&2; return 1; fi
 #  fi
@@ -57,6 +57,18 @@ pacman_neterr() {
   return 1
 }
 
+pacman_query() {
+  result=$(pacman "$@" 2>&1 >/dev/null)
+  if [ $? != 0 ]; then
+    if [ "$result" ]; then
+      echo "$result" >&2
+      exit 1
+    fi
+    return 1
+  fi
+  return 0
+}
+
 status=ok
 let itime=PERIOD*60
 
@@ -75,8 +87,7 @@ while true; do
     continue
   fi
   echo "sync"
-  updates=$(pacman -Qu) || exit 1
-  if [ "$updates" ]; then
+  if pacman_query -Qu; then
     if pacman_neterr -Su --noconfirm; then
       sleep $RETRY_PAUSE
       continue
