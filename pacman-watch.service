@@ -1,0 +1,18 @@
+# pacman-watch monitors Arch Linux updates for trouble
+# https://github.com/networkimprov/pacman-watch
+#
+# "pacman-watch.service" client systemd config
+#
+# Copyright 2014 by Liam Breck
+
+[Unit]
+Description=pacman-watch client
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/pacman-watch-client
+
+[Install]
+WantedBy=multi-user.target
+
