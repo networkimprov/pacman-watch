@@ -11,7 +11,7 @@
 #. /etc/pacman-watch.conf
 
 # move to .conf
-CLIENT="anvl1"
+CLIENT=$(cat /sys/class/net/mlan0/address)
 HOST="localhost:4321"
 PASSWORD="password"
 let PERIOD=1
